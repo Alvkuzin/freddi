@@ -209,7 +209,10 @@ dict neutron_star_evolution_kwdefaults() {
 	kw["nsprop"] = NeutronStarArguments::default_nsprop;
 	kw["freqx"] = object();
 	kw["Rx"] = object();
-	kw["hotspotarea"] = NeutronStarArguments::default_hotspotarea;
+	kw["Rm_type"] = NeutronStarArguments::default_Rm_type;
+	kw["h2r_bozzo"] = NeutronStarArguments::default_h2r_bozzo;
+	kw["chi_oblique"] = NeutronStarArguments::default_chi_oblique;
+    kw["hotspotarea"] = NeutronStarArguments::default_hotspotarea;
 	kw["epsilonAlfven"] = NeutronStarArguments::default_epsilonAlfven;
 	kw["inversebeta"] = NeutronStarArguments::default_inversebeta;
 	kw["Rdead"] = NeutronStarArguments::default_Rdead;
@@ -228,7 +231,8 @@ boost::shared_ptr<FreddiNeutronStarArguments> make_freddi_neutron_star_arguments
 
 	const auto ns_args = make_neutron_star_arguments(
 			extract<std::string>(kw["nsprop"]),
-			kw["freqx"], kw["Rx"], extract<double>(kw["Bx"]), extract<double>(kw["hotspotarea"]),
+			kw["freqx"], kw["Rx"], extract<double>(kw["Bx"]), extract<std::string>(kw["Rm_type"]),
+			extract<double>(kw["h2r_bozzo"]), extract<double>(kw["chi_oblique"]), extract<double>(kw["hotspotarea"]),
 			extract<double>(kw["epsilonAlfven"]), extract<double>(kw["inversebeta"]), extract<double>(kw["Rdead"]),
 			extract<std::string>(kw["fptype"]), kw["fpparams"],
 			extract<std::string>(kw["kappattype"]), kw["kappatparams"],
@@ -322,6 +326,5 @@ void wrap_evolution() {
 		.add_property("T_hot_spot", &FreddiNeutronStarEvolution::T_hot_spot)
 		.add_property("Lbol_ns", &FreddiNeutronStarEvolution::Lbol_ns)
 		.add_property("Lx_ns", &FreddiNeutronStarEvolution::Lx_ns)
-        .add_property("Fx_ns", &FreddiNeutronStarEvolution::Fx_ns);
 	;
 }

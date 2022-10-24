@@ -2,9 +2,17 @@
 
 #include <ns/ns_arguments.hpp>
 
+#include <boost/math/tools/roots.hpp>
+
+#include <fstream>
+
 constexpr const char NeutronStarArguments::default_nsprop[];
+constexpr const char NeutronStarArguments::default_Rm_type[];
+constexpr const double NeutronStarArguments::default_h2r_bozzo;
+constexpr const double NeutronStarArguments::default_chi_oblique;
 constexpr const double NeutronStarArguments::default_hotspotarea;
 constexpr const double NeutronStarArguments::default_epsilonAlfven;
+//constexpr const double NeutronStarArguments::default_gamma_GL;
 constexpr const double NeutronStarArguments::default_inversebeta;
 constexpr const double NeutronStarArguments::default_Rdead;
 constexpr const char NeutronStarArguments::default_fptype[];
@@ -48,10 +56,88 @@ double NeutronStarArguments::initializeRx(const std::string& nsprop, const std::
 }
 
 double NeutronStarArguments::R_Alfven(double GM, double Mdot) const {
-	return epsilonAlfven * std::pow(m::pow<4>(mu_magn) / (GM * m::pow<2>(Mdot)), 1./7.);
+	return epsilonAlfven * R_Alfven_basic(GM, Mdot);
 }
 
+double NeutronStarArguments::R_Alfven_basic(double GM, double Mdot) const {
+	return std::pow(m::pow<4>(mu_magn) / (GM * m::pow<2>(Mdot)), 1./7.);
+}
 
+double NeutronStarArguments::R_Magn_KR07(double GM,  double Mdot) const {
+	const double RA = R_Alfven_basic(GM, Mdot);
+    const double RC = std::cbrt(GM / m::pow<2>(2*M_PI * freqx));
+    //const double alpha = 0.5; //поправить потом  это дело
+    const double chi_oblique_rad = chi_oblique * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(1.);
+    const double H_to_R_temp = h2r_bozzo;
+    
+    double guess = 0.9;
+    std::uintmax_t maxit = 300;
+    double left = 0.;
+    double right = 3.;
+    boost::math::tools::eps_tolerance<double> tol(10);
+    
+    
+    std::pair<double, double> r = boost::math::tools::toms748_solve(
+            [RC, RA, chi_oblique_rad, parametr_bozzo, H_to_R_temp](double omega) 
+			{ 
+				return parametr_bozzo * (m::pow<2>(std::cos(chi_oblique_rad)) * (1. - omega) + 
+				H_to_R_temp * (8. - 8. * omega) * m::pow<2>(std::sin(chi_oblique_rad)) ) * std::pow(RA/RC, 3.5) 
+				- 0.5 * std::pow(omega, 7./3.); 
+			},
+                 left, right, tol, maxit);
+				 std::cout << std::pow(r.first, 2./3.) * RC << std::endl;
+    return std::pow(r.first, 2./3.) * RC;
+    
+}
+/*
+double NeutronStarArguments::R_max_Fmagn_KR07(double GM, double alpha, double Mdot) const {
+	const double RA = R_Alfven_basic(GM, Mdot);
+    const double RC = std::cbrt(GM / m::pow<2>(2*M_PI * freqx));
+    //const double alpha = 0.5; //поправить потом  это дело
+    const double chi_oblique_rad = chi_oblique * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(0.2) / alpha;
+    const double H_to_R_temp = h2r_bozzo;
+
+	return std::pow((m::pow<2>(std::sin(chi_oblique_rad))*(11. * H_to_R_temp - 1. ) + 1.) 
+	/ 
+	(m::pow<2>(std::sin(chi_oblique_rad))*(8. * H_to_R_temp - 1. ) + 1.), 2./3.) * RC;
+}
+
+double NeutronStarArguments::R_Mdot_slope_KR07(double GM, double alpha, double Mdot) const {
+	const double RA = R_Alfven_basic(GM, Mdot);
+    const double RC = std::cbrt(GM / m::pow<2>(2*M_PI * freqx));
+    //const double alpha = 0.5; //поправить потом  это дело
+    const double chi_oblique_rad = chi_oblique * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(0.2) / alpha;
+    const double H_to_R_temp = h2r_bozzo;
+	const double Rmax = R_max_Fmagn_KR07(GM, alpha, Mdot);
+	const double R0 = R_Magn_KR07(GM, Mdot); // We assume that Rmax > R0
+
+	
+    std::uintmax_t maxit = 300;
+    double left = std::pow(RC/Rmax, 0.5);
+    double right = std::pow(RC/R0, 0.5);
+	double guess = left + 0.01;
+    const int digits = std::numeric_limits<double>::digits/2;
+
+	double result = boost::math::tools::newton_raphson_iterate(
+            [RC, RA, chi_oblique_rad, parametr_bozzo, H_to_R_temp](double y) { 
+				// y = 1/std::pow(R/RC, 0.5)
+				double f = parametr_bozzo * (m::pow<2>(std::cos(chi_oblique_rad)) * (2*m::pow<10>(y) - 2*m::pow<7>(y))
+				 + H_to_R_temp * (22*m::pow<10>(y) - 16.*m::pow<7>(y)) * m::pow<2>(std::sin(chi_oblique_rad)) ) * std::pow(RA/RC, 3.5) - 1;
+
+				double f_deriv = parametr_bozzo * (m::pow<2>(std::cos(chi_oblique_rad)) * (20*m::pow<9>(y) - 14*m::pow<6>(y))
+				 + H_to_R_temp * (220*m::pow<9>(y) - 16. * 7.*m::pow<6>(y)) * m::pow<2>(std::sin(chi_oblique_rad)) ) * std::pow(RA/RC, 3.5);
+
+				return std::make_tuple(f, f_deriv); 
+				},
+                 guess, left, right, digits, maxit);
+	return RC/m::pow<2>(result);
+}
+// написать все же через трансцендентное уравнение
+
+*/
 double SibgatullinSunyaev2000Geometry::radiusNS(double freqx) {
 	const double freqx_kHz = freqx / 1000.0;
 	// Eq. 25
@@ -101,7 +187,7 @@ std::optional<double> NeutronStarBasicDiskBinaryArguments::initializeRisco(const
 	}
 	if (ns_args.nsprop == "newt") {
 		return SibgatullinSunyaev2000Geometry::radiusISCO(ns_args.freqx);
-        }
+        	}
 	if (ns_args.nsprop == "sibgatullinsunyaev2000" || ns_args.nsprop == "sibsun2000") {
 		return SibgatullinSunyaev2000Geometry::radiusISCO(ns_args.freqx);
 	}
@@ -147,8 +233,19 @@ std::shared_ptr<DiskStructureArguments::InitialFFunction> NeutronStarDiskStructu
 
 	if (initialcond == "quasistat-ns" || initialcond == "quasistat_ns") {
 		if (Mdot0) {
-			// see comments to "quasistat" in arguments.cpp
-			const double Ralfven = ns_args.R_Alfven( bdb_args.Mx * GSL_CONST_CGSM_GRAVITATIONAL_CONSTANT, *Mdot0);
+            double Ralfven;
+            if (ns_args.Rm_type == "kluzniak" || ns_args.Rm_type == "Kluzniak"){
+				double R0 = ns_args.R_Magn_KR07(bdb_args.Mx * GSL_CONST_CGSM_GRAVITATIONAL_CONSTANT, *Mdot0);
+				/*double Rmax = ns_args.R_max_Fmagn_KR07(bdb_args.Mx * GSL_CONST_CGSM_GRAVITATIONAL_CONSTANT, *Mdot0);
+				if (R0 >= Rmax) {
+					Ralfven = R0;
+				} else {
+					Ralfven = std::max(ns_args.R_Mdot_slope_KR07(bdb_args.Mx * GSL_CONST_CGSM_GRAVITATIONAL_CONSTANT, *Mdot0), R0);
+				}*/
+				Ralfven = R0;
+            } else {
+				Ralfven = ns_args.R_Alfven( bdb_args.Mx * GSL_CONST_CGSM_GRAVITATIONAL_CONSTANT, *Mdot0);    
+            }
 			const double h_in = bdb_args.h(std::max(Ralfven, bdb_args.rin));
 			const double h_out = bdb_args.h(bdb_args.rout);
 
@@ -174,10 +271,11 @@ std::shared_ptr<DiskStructureArguments::InitialFFunction> NeutronStarDiskStructu
 vecd NeutronStarDiskStructureArguments::InitialFQuasistatNS::operator()(const vecd& h) const {
 	vecd F(h.size());
 	for (size_t i = first(h); i < h.size(); ++i) {
-		// see comments in arguments.cpp
-		// and Lipunova & Malanchev (2017), Appnedix B, case (v)
 		const double xi_LS2000 = h[i] / h.back();
 		F[i] = F0 * oprel.f_F(xi_LS2000) * (1. - h_in / h[i]) / (1. - h_in / h.back());
+		//F is Fsum, modification of F will be done in constructor of F. 
+		//h[first(h)] does not equal h_in since h_in is calculated analitically, but h[first(h)] is the nearest mesh node.
+		//It leads to the fact that F_vis(h[first(h)])!=0 in initial distribution.
 	}
 	return F;
 }

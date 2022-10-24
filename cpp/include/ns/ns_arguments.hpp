@@ -16,6 +16,10 @@ namespace SibgatullinSunyaev2000Geometry {
 class NeutronStarArguments {
 public:
 	constexpr static const char default_nsprop[] = "dummy";
+    constexpr static const double default_h2r_bozzo = 0.01;
+    constexpr static const char default_Rm_type[] = "alfven";
+	constexpr static const double default_chi_oblique = 0.;
+    //constexpr static const double default_gamma_GL = 1.;
 	constexpr static const double default_hotspotarea = 1.;
 	constexpr static const double default_epsilonAlfven = 1.;
 	constexpr static const double default_inversebeta = 0.;
@@ -32,9 +36,13 @@ public:
 	double freqx;
 	double Rx;
 	double Bx;
+    std::string Rm_type;
+    double h2r_bozzo;
+    double chi_oblique;
 	double hotspotarea;
 	double mu_magn;
 	double epsilonAlfven;
+	//double gamma_GL;
 	double inversebeta;
 	double Rdead;
 	std::string fptype;
@@ -50,20 +58,33 @@ public:
 			const std::string& nsprop,
 			std::optional<double> freqx,
 			std::optional<double> Rx_,
-			double Bx, double hotspotarea,
-			double epsilonAlfven, double inversebeta, double Rdead,
+			double Bx,
+            const std::string& Rm_type, double h2r_bozzo, double chi_oblique, 
+            double hotspotarea,
+			double epsilonAlfven,
+
+            //double gamma_GL,
+		       	double inversebeta, double Rdead,
 			const std::string& fptype, const pard& fpparams,
 			const std::string& kappat_type, const pard& kappat_params,
 			const std::string& ns_grav_redshift):
 			nsprop(nsprop),
 			freqx(freqx ? *freqx : initializeFreqx(nsprop)),
 			Rx(Rx_ ? *Rx_ : initializeRx(nsprop, freqx)),
-			Bx(Bx), hotspotarea(hotspotarea), mu_magn(0.5 * Bx * m::pow<3>(Rx)),
-			epsilonAlfven(epsilonAlfven), inversebeta(inversebeta), Rdead(Rdead),
+			Bx(Bx), 
+			Rm_type(Rm_type), h2r_bozzo(h2r_bozzo), chi_oblique(chi_oblique),
+			hotspotarea(hotspotarea), mu_magn(0.5 * Bx * m::pow<3>(Rx)),
+			epsilonAlfven(epsilonAlfven),
+			//gamma_GL(1.),
+		      	inversebeta(inversebeta), Rdead(Rdead),
 			fptype(fptype), fpparams(fpparams),
 			kappat_type(kappat_type), kappat_params(kappat_params),
 			ns_grav_redshift(ns_grav_redshift) {}
 	double R_Alfven(double GM, double Mdot) const;
+    double R_Alfven_basic(double GM, double Mdot) const;
+    double R_Magn_KR07(double GM, double Mdot) const;
+	//double R_max_Fmagn_KR07(double GM,  double alpha, double Mdot) const;
+	//double R_Mdot_slope_KR07(double GM, double alpha, double Mdot) const;
 };
 
 

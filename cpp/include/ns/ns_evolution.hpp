@@ -49,9 +49,13 @@ private:
 		double mu_magn;
 		double R_cor;
 		double R_dead;
+        double R_Alfven_basic;
 //		double F_dead;
 		double inverse_beta;
 		double epsilon_Alfven;
+        std::string Rmtype;
+        double h2rbozzo;
+        double chioblique;
 		double hot_spot_area;
 		vecd Fmagn;
 		vecd dFmagn_dh;
@@ -64,6 +68,10 @@ private:
 		vecd initialize_d2Fmagn_dh2(FreddiEvolution* evolution) const;
 	public:
 		NeutronStarStructure(const NeutronStarArguments& args_ns, FreddiEvolution* evolution);
+        //double R_Magn_KR07(FreddiEvolution* evolution) const;
+		inline double R_Magn_KR07(FreddiEvolution* evolution) const { return args_ns.R_Magn_KR07(evolution->GM(),  evolution->Mdot_in()); }
+        double F_Magn_KR07(const double R, FreddiEvolution* evolution) const;
+		double dF_dh_Magn_KR07(const double R, const double GM, FreddiEvolution* evolution) const;
 	};
 
 	struct NeutronStarOptionalStructure {
@@ -171,6 +179,7 @@ private:
 		//TODO double RiscoIsFurthest(const FreddiNeutronStarEvolution& freddi, double Rm) const override { return fall_from_isco(freddi, Rm); }
 		double RiscoIsFurthest(const FreddiNeutronStarEvolution& freddi, double Rm) const override { return small_magnetosphere(freddi, Rm); }
 	};
+    
 private:
 	std::shared_ptr<const NeutronStarStructure> ns_str_;
 	NeutronStarOptionalStructure ns_opt_str_;
@@ -187,6 +196,9 @@ public:
 	inline double redshift() const { return ns_str_->redshift; }
 	inline double R_m_min() const { return ns_str_->R_m_min; }
 	inline double mu_magn() const { return ns_str_->mu_magn; }
+	inline std::string Rmtype() const { return ns_str_->Rmtype; }
+	inline double h2rbozzo() const { return ns_str_->h2rbozzo; }
+	inline double chioblique() const { return ns_str_->chioblique; }
 	inline double R_dead() const { return ns_str_->R_dead; }
 //	inline double F_dead() const { return ns_str_->F_dead; }
 	inline double R_cor() const { return ns_str_->R_cor; }
@@ -196,6 +208,7 @@ public:
 	inline const vecd& Fmagn() const { return ns_str_->Fmagn; }
 	inline const vecd& dFmagn_dh() const { return ns_str_->dFmagn_dh; }
 	inline const vecd& d2Fmagn_dh2() const { return ns_str_->d2Fmagn_dh2; }
+	inline double R_Magn_KR07() const { return ns_str_->args_ns.R_Magn_KR07(GM(),  Mdot_in()); }
 // ns_opt_str_
 public:
 	double Lbol_ns() const;
@@ -203,7 +216,6 @@ public:
 	double T_hot_spot() const;
 	double Lx_ns();
 	double Lx_ns_rest_frame();
-    double Fx_ns();
 // angular_dist_ns_
 public:
 	inline double angular_dist_ns(const double mu) { return ns_irr_source_->angular_dist(mu); }
@@ -219,6 +231,13 @@ public:
 	using FreddiEvolution::step;
 	virtual double Mdot_in() const override;
 	double R_Alfven() const;
+    double R_Alfven_basic() const;
+	double R_Magn_bozzo18() const;
+    //double R_Magn_KR07() const;
+	//double R_max_Fmagn_KR07() const;
+	//double R_Mdot_slope_KR07() const;
+	double F_Magn_KR07(const double R) const;
+	double dF_dh_Magn_KR07(const double R) const;
 protected:
 	virtual void invalidate_optional_structure() override;
 	virtual void truncateInnerRadius() override;

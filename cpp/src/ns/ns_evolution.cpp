@@ -1,7 +1,11 @@
 #include <exception>
 
+#include <boost/math/tools/roots.hpp>
+
 #include "exceptions.hpp"
 #include "ns/ns_evolution.hpp"
+
+#include <fstream>
 
 
 FreddiNeutronStarEvolution::ConstKappaT::ConstKappaT(double value):
@@ -55,6 +59,9 @@ FreddiNeutronStarEvolution::NeutronStarStructure::NeutronStarStructure(
 //		F_dead((*kappa_t)(R_dead / R_cor) * m::pow<2>(mu_magn) / m::pow<3>(R_dead)),
 		inverse_beta(args_ns.inversebeta),
 		epsilon_Alfven(args_ns.epsilonAlfven),
+		Rmtype(args_ns.Rm_type),
+		h2rbozzo(args_ns.h2r_bozzo),
+        chioblique(args_ns.chi_oblique),
 		hot_spot_area(args_ns.hotspotarea),
 		Fmagn(initialize_Fmagn(evolution)),
 		dFmagn_dh(initialize_dFmagn_dh(evolution)),
@@ -93,6 +100,15 @@ std::shared_ptr<FreddiNeutronStarEvolution::BasicKappaT> FreddiNeutronStarEvolut
 
 vecd FreddiNeutronStarEvolution::NeutronStarStructure::initialize_Fmagn(FreddiEvolution* evolution) const {
 	vecd Fmagn_(evolution->Nx());
+    
+    if (Rmtype == "kluzniak" || Rmtype == "Kluzniak") {
+        
+		for (size_t i = 0; i < evolution->Nx(); i++) {
+			Fmagn_[i] = F_Magn_KR07(evolution->R()[i], evolution);
+		}
+	return Fmagn_;
+    }
+    
 	const double k = inverse_beta * m::pow<2>(mu_magn) / 3.;
 	double brackets;
 	for (size_t i = 0; i < evolution->Nx(); i++) {
@@ -109,6 +125,24 @@ vecd FreddiNeutronStarEvolution::NeutronStarStructure::initialize_Fmagn(FreddiEv
 
 vecd FreddiNeutronStarEvolution::NeutronStarStructure::initialize_dFmagn_dh(FreddiEvolution* evolution) const {
 	vecd dFmagn_dh_(evolution->Nx());
+    
+   if (Rmtype == "kluzniak" || Rmtype == "Kluzniak") {
+   /*     const double chi_oblique_rad = chioblique * M_PI / 180.;
+        const double H_to_R_temp = h2rbozzo;
+        //const double R_0 = std::max(R_Magn_KR07(evolution), R_x);
+        const double k = inverse_beta * m::pow<2>(mu_magn) / std::pow(evolution->GM(), 0.5);
+	double brackets1, brackets2;
+	for (size_t i = 0; i < evolution->Nx(); i++) {
+		brackets1 = - 2. / std::pow(evolution->R()[i], 3.5) + 2. * std::pow(R_cor, 1.5) / m::pow<5>(evolution->R()[i]);
+        brackets2 = - 16./ (std::pow(evolution->R()[i], 3.5)) + 22. * std::pow(R_cor, 1.5) / m::pow<5>(evolution->R()[i]);
+		dFmagn_dh_[i] = k * (m::pow<2>(std::cos(chi_oblique_rad)) * brackets1 + H_to_R_temp * m::pow<2>(std::sin(chi_oblique_rad)) * brackets2);
+	}*/
+	for (size_t i = 0; i < evolution->Nx(); i++) {
+		dFmagn_dh_[i] = dF_dh_Magn_KR07(evolution->R()[i], evolution->GM(), evolution);
+	}
+	return dFmagn_dh_;
+    }
+    
 	const double k = inverse_beta * 2 * m::pow<2>(mu_magn) * m::pow<3>(evolution->GM());
 	double brackets;
 	for (size_t i = 0; i < evolution->Nx(); i++) {
@@ -125,6 +159,26 @@ vecd FreddiNeutronStarEvolution::NeutronStarStructure::initialize_dFmagn_dh(Fred
 
 vecd FreddiNeutronStarEvolution::NeutronStarStructure::initialize_d2Fmagn_dh2(FreddiEvolution* evolution) const {
 	vecd d2Fmagn_dh2_(evolution->Nx());
+    
+    if (Rmtype == "kluzniak" || Rmtype == "Kluzniak") {
+        const double chi_oblique_rad = chioblique * M_PI / 180.;
+        //const double H_to_R_temp = h2rbozzo;
+        const double R_0 = std::max(R_Magn_KR07(evolution), R_x); //здесь не нужно
+        const double w = std::pow(R_0 / R_cor, 1.5);
+        const double h0 = std::pow(evolution->GM() * R_0, 0.5);
+        //const double k = inverse_beta * m::pow<2>(mu_magn) / std::pow(evolution->GM(), 0.5);
+        double brackets, h;
+        for (size_t i = 0; i < evolution->Nx(); i++) {
+            //brackets1 = 14. /m::pow<4>(evolution->R()[i]) - 20. * std::pow(R_cor, 1.5) / std::pow(evolution->R()[i], 5.5);
+            //brackets2 = 112./m::pow<4>(evolution->R()[i]) - 220. * std::pow(R_cor, 1.5) / std::pow(evolution->R()[i], 5.5);
+            //d2Fmagn_dh2_[i] = k  * (m::pow<2>(std::cos(chi_oblique_rad)) * brackets1 + H_to_R_temp * m::pow<2>(std::sin(chi_oblique_rad)) * brackets2);
+            brackets = -4 * w * m::pow<3>(h0 / h) + 7 * m::pow<6>(h0 / h);
+            d2Fmagn_dh2_[i] = 2 * m::pow<2>(std::cos(chi_oblique_rad)) * m::pow<2>(mu_magn) / m::pow<3>(R_0) * brackets / m::pow<2>(h);
+        }
+        return d2Fmagn_dh2_;
+    }
+ 
+    
 	const double k = inverse_beta * 2 * m::pow<2>(mu_magn) / evolution->GM();
 	double brackets;
 	for (size_t i = 0; i < evolution->Nx(); i++) {
@@ -327,14 +381,19 @@ FreddiNeutronStarEvolution::FreddiNeutronStarEvolution(const FreddiNeutronStarAr
 		eta_ns_(initializeNsAccretionEfficiency(*args.ns, this)) {
 	// Change initial condition due presence of magnetic field torque. It can spoil user-defined initial disk
 	// parameters, such as mass or Fout
+       
 	if (inverse_beta() <= 0.) {  // F_in is non-zero, Fmagn is zero everywhere
 		current_.F_in = kappa_t(str_->R[0]) * m::pow<2>(mu_magn()) / m::pow<3>(R_cor());
 		for (size_t i = 0; i < Nx(); i++) {
 			current_.F[i] += current_.F_in;
 		}
 	} else {  // F_in is zero, and F + Fmagn = initial_cond + Fmagn_in
-		for (size_t i = 0; i < Nx(); i++) {
-			current_.F[i] += -Fmagn()[i] + Fmagn()[0];
+		//for (size_t i = 0; i < Nx(); i++) {             // before 13th December
+            //current_.F[i] += -Fmagn()[i] + Fmagn()[0]; // before 13th December
+          for (size_t i = first(); i < h().size(); ++i) {
+//		      current_.F[i] += F_Magn_KR07(R_Magn_KR07()) - Fmagn()[i];	// F_sum --> F_vis
+            current_.F[i] += Fmagn()[first()] - Fmagn()[i];
+//            std::cout << "Fmagn[" << i << "]=" << Fmagn()[i] << std::endl;
 		}
 	}
 }
@@ -367,6 +426,7 @@ std::shared_ptr<FreddiNeutronStarEvolution::BasicNSMdotFraction> FreddiNeutronSt
 	}
 	throw std::invalid_argument("Wrong fptype");
 }
+
 
 std::shared_ptr<FreddiNeutronStarEvolution::BasicNSAccretionEfficiency> FreddiNeutronStarEvolution::initializeNsAccretionEfficiency(const NeutronStarArguments& args_ns, const FreddiNeutronStarEvolution* freddi) {
 	const auto& nsprop = args_ns.nsprop;
@@ -416,12 +476,6 @@ double FreddiNeutronStarEvolution::Lx_ns_rest_frame() {
 }
 
 
-
-double FreddiNeutronStarEvolution::Fx_ns() {
-    return Lx_ns() * angular_dist_ns(cosi()) / (FOUR_M_PI * m::pow<2>(distance()));
-}
-
-
 void FreddiNeutronStarEvolution::invalidate_optional_structure() {
 	FreddiEvolution::invalidate_optional_structure();
 	ns_opt_str_ = NeutronStarOptionalStructure();
@@ -429,53 +483,319 @@ void FreddiNeutronStarEvolution::invalidate_optional_structure() {
 
 
 void FreddiNeutronStarEvolution::truncateInnerRadius() {
+ 
+    //const auto& Rm_definition = args_ns.Rm_definition;
 	if (R_dead() <= 0.) {
 		return;
 	}
-	// check proper value of accretion rate:
-	if ((!std::isfinite(Mdot_in_prev())) || ( Mdot_in() < 0.0 ) || ( Mdot_in_prev() < 0.0 )) {
+	
+	//std::cout << Fmagn()[current_.first] << " ***************** " << Mdot_in() << " " << Mdot_in_prev() << std::endl;
+	// check proper value of accretion rate:)
+	if (((!std::isfinite(Mdot_in_prev())) || ( Mdot_in() < 0.0 ) || ( Mdot_in_prev() < 0.0 ))) { 
 		return;
 	}
 	// check that Mdot decaying:
-	if ( Mdot_in() > Mdot_in_prev() ) {
+	if (( Mdot_in() > Mdot_in_prev())  )  { //&& inverse_beta() <= 0.
 		return;
 	}
+    double R_magnetic;
+    if (Rmtype() == "bozzo" || Rmtype() == "Bozzo"){
+        R_magnetic = R_Magn_bozzo18(); 
+    }
+    
+    if (Rmtype() == "alfven" || Rmtype() == "Alfven"){
+        R_magnetic = R_Alfven();
+    }
+    
+    if (Rmtype() == "Kluzniak" || Rmtype() == "kluzniak"){
+		//std::cout << R_Magn_KR07() << "*" << R_max_Fmagn_KR07() << std::endl;
+        //R_magnetic = std::max(R_Magn_KR07(), R_Mdot_slope_KR07());
+		R_magnetic = R_Magn_KR07();
+    }
 
-	double R_m = std::max(R_m_min(), R_Alfven());
-	R_m = std::min(R_m, R_dead());
-	size_t ii;
-	for (ii = first(); ii <= last() - 2; ii++) {
-		if (R()[ii + 1] > R_m){
-			break;
-		}
-	}
-	if (ii >= last() - 2) {
-		throw RadiusCollapseException();
-	}
-	R_m = R()[ii];
-	current_.first = ii;
+    double R_m = std::max(R_m_min(), R_magnetic);
+    R_m = std::min(R_m, R_dead());
+    /*
+    if (R_m == R_magnetic){
+        std::cout << "defined my magnetosphere\n";
+    }
+    
+    if (R_m == R_m_min()){
+        std::cout << "defined my NS\n";
+    }
+    
+    if (R_m == R_dead()){
+        std::cout << "defined my dead disk\n";
+    }
+    //std::cout << Mdot_in() << std::endl;
+    */
+    size_t ii;
+    for (ii = first(); ii <= last()-2; ii++) {
+        if (R()[ii + 1] > R_m){
+            break;
+        }
+    }
+    if (ii >= last() - 2) {
+        throw RadiusCollapseException();
+    }
 
-	double new_F_in = 0;
-	if (inverse_beta() <= 0.) {
-		if (R_m <= R_cor()) {
-			new_F_in = kappa_t(R_m) * m::pow<2>(mu_magn()) / m::pow<3>(R_cor());
+	/*if (Rmtype() == "Kluzniak" || Rmtype() == "kluzniak"){
+		if ((R()[ii+1] >= R_max_Fmagn_KR07()) || (ii == first())) {
+    		R_m = R()[ii];
+    		current_.first = ii;
 		} else {
-//			new_F_in = F_dead() * m::pow<3>(R_dead() / R_m);
-			new_F_in = kappa_t(R_m) * m::pow<2>(mu_magn()) / m::pow<3>(R_m);
+			R_m = R()[ii+1];
+    		current_.first = ii+1;
 		}
-	}
-	current_.F_in = new_F_in;
-}
+	}*/ 
+    
+    R_m = R()[ii];
+    current_.first = ii;
+	
+    double new_F_in = 0;
 
+	double R0_KR07 = R_magnetic;
+	std::cout << R0_KR07 << " " << R_m << " " << R_m/R0_KR07 << std::endl;
+	double Mdot_KR07 = Mdot_in();
+        if (inverse_beta() <= 0.) {
+            if (R_m <= R_cor()) {
+                new_F_in = kappa_t(R_m) * m::pow<2>(mu_magn()) / m::pow<3>(R_cor());
+            } else {
+    //			new_F_in = F_dead() * m::pow<3>(R_dead() / R_m);
+                new_F_in = kappa_t(R_m) * m::pow<2>(mu_magn()) / m::pow<3>(R_m);
+            }
+        } else {
+			if (Rmtype() == "Kluzniak" || Rmtype() == "kluzniak"){
+            	//new_F_in = Mdot_KR07*(std::pow(GM()*R_m, 0.5)-std::pow(GM()*R0_KR07, 0.5)) - F_Magn_KR07(R_m) + F_Magn_KR07(R0_KR07);
+				/*std::cout << R0_KR07 << " " << R_m << " " << new_F_in << " " << Mdot_KR07 << " " 
+				<< Mdot_KR07*(std::pow(GM()*R_m, 0.5)-std::pow(GM()*R0_KR07, 0.5)) <<  " " <<  F_Magn_KR07(R_m) - F_Magn_KR07(R0_KR07) << " " <<
+				(Mdot_KR07*(std::pow(GM()*R_m, 0.5)-std::pow(GM()*R0_KR07, 0.5)))/(F_Magn_KR07(R_m) - F_Magn_KR07(R0_KR07)) << std::endl;
+				*/
+//			new_F_in = Mdot_KR07*(std::pow(GM()*R_m, 0.5)-std::pow(GM()*R0_KR07, 0.5)) - F_Magn_KR07(R_m) + F_Magn_KR07(R0_KR07);
+			new_F_in = 0;
+			} else {
+				new_F_in = 0;
+			}
+        }
+        current_.F_in = new_F_in;
+}
 
 double FreddiNeutronStarEvolution::Mdot_in() const {
 	const double dF_dh = (F()[first() + 1] - F()[first()]) / (h()[first() + 1] - h()[first()]);
-	return dF_dh + dFmagn_dh()[first()];
+	//const double dFmag_dh = (F_Magn_KR07(R()[first() + 1]) - F_Magn_KR07(R()[first()])) / (h()[first() + 1] - h()[first()]);
+	//return dF_dh + dFmag_dh;
+	return dF_dh + dFmagn_dh()[first()]; //F is F_vis
+    //return dF_dh;
+	//return dF_dh + dF_dh_Magn_KR07(R_Magn_KR07()); //F is F_vis
 }
 
 double FreddiNeutronStarEvolution::R_Alfven() const {
 	return ns_str_->args_ns.R_Alfven(GM(), Mdot_in());
 }
+
+double FreddiNeutronStarEvolution::R_Alfven_basic() const {
+	return ns_str_->args_ns.R_Alfven_basic(GM(), Mdot_in());
+}
+
+
+double FreddiNeutronStarEvolution::R_Magn_bozzo18() const {
+	const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double alpha = args().basic->alpha; 
+	//eta (Bozzo2018) = 0.2, screening factor
+	const double parametr_bozzo = 2. * m::pow<2>(0.2) / alpha; 
+	const double RA = R_Alfven_basic();
+    const double RCorrot = R_cor();
+	const double parametr_thetta = RCorrot  / RA;
+
+
+    const double H_to_R_temp = h2rbozzo(); //временно
+	const bool sign_at_inf = 1; 
+    
+    //sign of Bozzo expression should be minus in infunuty!!!
+
+    
+    const double xbozzo_0 = R()[first()] / RCorrot;
+    const double fxbozzo_0 = parametr_bozzo * ( (1. - std::pow(xbozzo_0, 1.5) ) * m::pow<2>(std::cos(chi_oblique_rad)) 
+	+ H_to_R_temp * (8. - 5. * std::pow(xbozzo_0, 1.5)) * m::pow<2>(std::sin(chi_oblique_rad))) - std::pow(xbozzo_0 * parametr_thetta, 3.5);
+    
+    if (std::signbit(fxbozzo_0) == sign_at_inf){//that would mean the root is smaller than R_m_min and so we return any number less than NS radius 
+        return 0. ; 
+    }
+    
+	size_t jj;
+    double xbozzo;
+    double fxbozzo;
+    //double fxbozzo_prev;
+    //now compare the sign of expression with its sign at the infinity, break when sign changes
+    
+	for(jj = first(); jj <= last() - 2 ; jj++){
+        //double fxbozzo_prev = fxbozzo;
+		xbozzo = R()[jj] / RA;
+		fxbozzo = parametr_bozzo *( (1. - std::pow(xbozzo / parametr_thetta, 1.5) ) * m::pow<2>(std::cos(chi_oblique_rad)) 
+		+ H_to_R_temp * (8. - 5. * std::pow(xbozzo / parametr_thetta, 1.5)) * m::pow<2>(std::sin(chi_oblique_rad))) - std::pow(xbozzo, 3.5);
+        if (fxbozzo < 0.){ //check if sigh of expression changes
+            break;
+        }
+	}
+	if (jj == last() - 2){
+        throw RadiusCollapseException();;
+    }
+
+	return R()[jj];
+	//мы могли бы провести здесь интерполяцию между R[jj_найденное] и R[jj_прошлое], тогда, наверное, даже не будет ёлочки. 
+    //return (R[jj] * fxbozzo_prev - R[jj + 1] * fxbozzo) / (fxbozzo_prev - fxbozzo)
+}
+
+/*double FreddiNeutronStarEvolution::R_Magn_KR07() const {
+	const double RA = R_Alfven_basic();
+    const double RC = R_cor();
+    const double alpha = 0.5; //поправить потом  это дело
+    const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(0.2) / alpha;
+    const double H_to_R_temp = h2rbozzo();
+
+	double guess = 0.9;
+    std::uintmax_t maxit = 1000;
+    double left = 0.;
+    double right = 3.;
+    boost::math::tools::eps_tolerance<double> tol(10);
+    
+    
+    std::pair<double, double> r = boost::math::tools::toms748_solve(
+            [RC, RA, chi_oblique_rad, parametr_bozzo, H_to_R_temp](double omega) 
+			{ 
+				return parametr_bozzo * (m::pow<2>(std::cos(chi_oblique_rad)) * (1. - omega) + 
+			H_to_R_temp * (11. - 8. * omega) * m::pow<2>(std::sin(chi_oblique_rad)) ) * 
+			std::pow(RA/RC, 3.5) - 0.5 * std::pow(omega, 10./3.);
+			},
+                 left, right, tol, maxit);
+	double omega = r.first;
+    return std::pow(r.first, 2./3.) * RC;
+	//return ns_str_->args_ns.R_Magn_KR07(GM(), Mdot_in()); 
+}*/
+
+double FreddiNeutronStarEvolution::F_Magn_KR07(const double R) const {
+	const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double R_0 = std::max(R_Magn_KR07(), R_x()); 
+    const double w = std::pow(R_0 / R_cor(), 1.5);
+	double brackets;
+	double Fmagn;
+    brackets = -2. * w / 3. * std::pow(R_0/R, 1.5) + m::pow<3>(R_0 / R);
+    Fmagn = m::pow<2>(mu_magn()) / m::pow<3>(R_0) * brackets * m::pow<2>(std::cos(chi_oblique_rad));
+	return Fmagn;
+      
+}
+
+double FreddiNeutronStarEvolution::dF_dh_Magn_KR07(const double R) const {
+    const double GM_ = GM(); 
+    const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double R_0 = std::max(R_Magn_KR07(), R_x());
+    const double w = std::pow(R_0 / R_cor(), 1.5);
+    const double h0 = std::pow(GM_ * R_0, 0.5);
+    double brackets, h;
+    h = std::pow(R * GM_, 0.5);
+    brackets = w * m::pow<3>(h0 / h) - m::pow<6>(h0 / h);
+    double dFmagn_dh_ = 2 * m::pow<2>(std::cos(chi_oblique_rad)) * m::pow<2>(mu_magn()) / m::pow<3>(R_0) * brackets / h;
+    return dFmagn_dh_;  
+}
+    
+double FreddiNeutronStarEvolution::NeutronStarStructure::F_Magn_KR07(const double R, FreddiEvolution* evolution) const {
+	const double chi_oblique_rad = chioblique * M_PI / 180.;    
+    const double R_0 = std::max(R_Magn_KR07(evolution), R_x); 
+    const double w = std::pow(R_0 / R_cor, 1.5);
+	double brackets;
+	double Fmagn;
+    brackets = -2. * w / 3. * std::pow(R_0/R, 1.5) + m::pow<3>(R_0 / R);
+    Fmagn = m::pow<2>(mu_magn) / m::pow<3>(R_0) * brackets * m::pow<2>(std::cos(chi_oblique_rad));
+	return Fmagn;
+       
+}
+
+double FreddiNeutronStarEvolution::NeutronStarStructure::dF_dh_Magn_KR07(const double R, const double GM, FreddiEvolution*  evolution) const {
+    const double chi_oblique_rad = chioblique * M_PI / 180.;
+    const double R_0 = std::max(R_Magn_KR07(evolution), R_x);
+    const double w = std::pow(R_0 / R_cor, 1.5);
+    const double h0 = std::pow(GM * R_0, 0.5);
+    double brackets, h;
+    h = std::pow(R * GM, 0.5);
+    brackets = w * m::pow<3>(h0 / h) - m::pow<6>(h0 / h);
+    double dFmagn_dh_ = 2 * m::pow<2>(std::cos(chi_oblique_rad)) * m::pow<2>(mu_magn) / m::pow<3>(R_0) * brackets / h;
+    return dFmagn_dh_;  
+}
+
+
+/*double FreddiNeutronStarEvolution::NeutronStarStructure::R_Magn_KR07(FreddiEvolution* evolution) const {
+	const double RA = R_Alfven_basic;
+    const double RC = R_cor;
+    const double alpha = 0.5; //поправить потом  это дело
+    const double chi_oblique_rad = chioblique * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(0.2) / alpha;
+    const double H_to_R_temp = h2rbozzo;
+
+	double guess = 0.9;
+    std::uintmax_t maxit = 300;
+    double left = 0.;
+    double right = 3.;
+    boost::math::tools::eps_tolerance<double> tol(10);
+    
+    
+    std::pair<double, double> r = boost::math::tools::toms748_solve(
+            [RC, RA, chi_oblique_rad, parametr_bozzo, H_to_R_temp](double omega) 
+			{ 
+				return parametr_bozzo * (m::pow<2>(std::cos(chi_oblique_rad)) * (1 - omega) + 
+			H_to_R_temp * (11 - 8 * omega) * m::pow<2>(std::sin(chi_oblique_rad)) ) * std::pow(RA/RC, 3.5) 
+			- 0.5 * std::pow(omega, 10./3.); 
+			},
+                 left, right, tol, maxit);
+    return std::pow(r.first, 2./3.) * RC;
+	//return args_ns.R_Magn_KR07(evolution->GM(), evolution->Mdot_in());
+    
+}*/
+
+/*double FreddiNeutronStarEvolution::R_max_Fmagn_KR07() const { // R : Fmagn -> max
+    const double RC = R_cor(); 
+    const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double H_to_R_temp = h2rbozzo();
+    
+    return std::pow((m::pow<2>(std::sin(chi_oblique_rad))*(11 * H_to_R_temp - 1 ) + 1) 
+	/ 
+	(m::pow<2>(std::sin(chi_oblique_rad))*(8.* H_to_R_temp - 1 ) + 1), 2./3.) * RC;
+    
+}
+
+double FreddiNeutronStarEvolution::R_Mdot_slope_KR07() const { // R : dFmag_dh = Mdot 
+    const double RA = R_Alfven_basic();                        // Not used now
+    const double RC = R_cor();
+	const double R_max = R_max_Fmagn_KR07();
+    const double alpha = args().basic->alpha; 
+    const double chi_oblique_rad = chioblique() * M_PI / 180.;
+    const double parametr_bozzo = m::pow<2>(0.2) / alpha;
+    const double H_to_R_temp = h2rbozzo();
+
+	size_t ii;
+    for (ii = first(); ii <= last() - 2; ii++) {
+        if (R()[ii + 1] > R_max){
+            break;
+        }
+    }
+    if (ii >= last() - 2) {
+        throw RadiusCollapseException();
+    }
+
+	size_t jj;
+	//We assume that dFmagn_dh < Mdot
+
+	for (jj = ii; jj >= first(); jj--) {
+        if (dFmagn_dh()[jj] >= Mdot_in()) {
+			break;
+		}
+    }
+
+    return R()[jj];
+    
+}
+*/
+
 
 IrradiatedStar::sources_t FreddiNeutronStarEvolution::star_irr_sources() {
 	auto sources = FreddiEvolution::star_irr_sources();
